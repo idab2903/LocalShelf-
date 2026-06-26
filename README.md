@@ -22,10 +22,11 @@ Gestor de archivos vía navegador para red local. Sin instalación en los dispos
 
 Crea un archivo `.env` en la raíz del proyecto:
 
+```
 PORT=
 ROOT_PATH=./files
 PRIVATE_PASSWORD_HASH=
-
+```
 
 ### Generar la contraseña de la carpeta privada
 
@@ -66,7 +67,7 @@ LocalShelf/
 | POST | `/auth-private` | Autentica la carpeta privada |
 | POST | `/logout-private` | Cierra la sesión privada |
 
-```
+
 ## Feature
 
 - [ ] Renombrar archivos desde la UI
@@ -74,8 +75,7 @@ LocalShelf/
 - [ ] Descarga múltiple como ZIP
 - [ ] Búsqueda de archivos por nombre
 - [ ] Ordenar por nombre, tamaño o fecha
-```
 
 ## Notas de seguridad
 
-LocalShelf está pensado para uso en **red local de confianza**. No tiene autenticación global — cualquier dispositivo en tu red puede acceder. NO EXPONER A INTERNET 
+LocalShelf está pensado para uso en **red local de confianza**. No tiene autenticación global, cualquier dispositivo en tu red puede acceder. NO EXPONER A INTERNET 
