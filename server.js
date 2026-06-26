@@ -229,6 +229,40 @@ app.delete('/delete', (req, res) => {
     res.sendStatus(200);
 });
 
+// ---------- Mover ----------
+app.post('/move', (req, res) => {
+    const { paths, destination } = req.body;
+    if (!Array.isArray(paths) || !paths.length || destination === undefined) {
+        return res.status(400).json({ error: 'Datos inválidos' });
+    }
+    if (!checkPrivateAccess(req, destination)) {
+        return res.status(401).json({ error: 'Acceso denegado' });
+    }
+
+    const destFull = safePath(destination);
+    if (!destFull || !fs.existsSync(destFull) || !fs.statSync(destFull).isDirectory()) {
+        return res.status(400).json({ error: 'Destino inválido' });
+    }
+
+    const errors = [];
+    for (const relPath of paths) {
+        if (!checkPrivateAccess(req, relPath)) { errors.push(relPath); continue; }
+        const src = safePath(relPath);
+        if (!src || !fs.existsSync(src)) { errors.push(relPath); continue; }
+        const fileName = path.basename(src);
+        const dest = path.join(destFull, fileName);
+        if (dest === src) continue;
+        try {
+            fs.renameSync(src, dest);
+        } catch {
+            errors.push(relPath);
+        }
+    }
+
+    if (errors.length) return res.status(207).json({ error: 'Algunos no se pudieron mover', errors });
+    res.json({ ok: true });
+});
+
 // ---------- START ----------
 app.listen(PORT, '0.0.0.0', () => {
     const interfaces = os.networkInterfaces();

@@ -2,6 +2,7 @@
 let currentPath = '';
 let currentView = localStorage.getItem('view') || 'grid';
 let dragCounter = 0;
+let selectedPaths = new Set();
 
 const grid = document.getElementById('grid');
 const uploadProgress = document.getElementById('uploadProgress');
@@ -158,9 +159,26 @@ function renderItems(items, path) {
     });
 }
 
+function handleTrashDrop(e) {
+    e.preventDefault();
+    if (!e.dataTransfer.types.includes('application/localshelf')) return;
+    const paths = JSON.parse(e.dataTransfer.getData('application/localshelf'));
+    const count = paths.length;
+    if (!confirm(`¿Eliminar ${count} elemento${count > 1 ? 's' : ''}?`)) return;
+    Promise.all(paths.map(p =>
+        fetch('/delete?path=' + encodeURIComponent(p), { method: 'DELETE' })
+    )).then(() => {
+        showToast('Eliminado', 'success');
+        clearSelection();
+        load(currentPath);
+    });
+}
+
 function renderGridItem(item, itemPath) {
     const el = document.createElement('div');
     el.className = 'item-grid';
+    el.draggable = true;
+    el.dataset.path = itemPath;
     const type = item.isDir ? 'dir' : getFileType(item.name);
 
     const previewHtml = (type === 'image')
@@ -178,25 +196,68 @@ function renderGridItem(item, itemPath) {
            </div>`;
 
     el.innerHTML = `
+        <input type="checkbox" class="item-checkbox" data-path="${escAttr(itemPath)}"
+            onclick="toggleSelect(event,'${escAttr(itemPath)}')">
         ${previewHtml}
         <div class="item-name" title="${escAttr(item.name)}">${item.name}</div>
         <div class="item-meta">${item.isDir ? 'Carpeta' : formatSize(item.size)}</div>
         ${actionsHtml}
     `;
 
+    // Click para abrir
+    el.onclick = (e) => {
+        if (e.target.classList.contains('item-checkbox')) return;
+        if (item.isDir) load(itemPath);
+        else openPreview(itemPath, item.name);
+    };
+
+    // Drag item
+    el.addEventListener('dragstart', e => {
+        e.stopPropagation(); // no disparar el drag global de subir
+        const paths = selectedPaths.size > 0 && selectedPaths.has(itemPath)
+            ? [...selectedPaths]
+            : [itemPath];
+        e.dataTransfer.setData('application/localshelf', JSON.stringify(paths));
+        e.dataTransfer.effectAllowed = 'move';
+        el.classList.add('dragging');
+         document.getElementById('dropParent').classList.add('visible');
+    });
+  el.addEventListener('dragend', () => {
+    el.classList.remove('dragging');
+    document.getElementById('dropParent').classList.remove('visible');
+});
+
+    // Drop en carpeta
     if (item.isDir) {
-        el.onclick = () => load(itemPath);
-    } else {
-        el.onclick = () => openPreview(itemPath, item.name);
+        el.addEventListener('dragover', e => {
+            if (!e.dataTransfer.types.includes('application/localshelf')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            el.classList.add('drop-target');
+        });
+        el.addEventListener('dragleave', () => el.classList.remove('drop-target'));
+        el.addEventListener('drop', e => {
+            if (!e.dataTransfer.types.includes('application/localshelf')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            el.classList.remove('drop-target');
+            const paths = JSON.parse(e.dataTransfer.getData('application/localshelf'));
+            moveItems(paths, itemPath);
+        });
     }
+
     return el;
 }
 
 function renderListItem(item, itemPath) {
     const el = document.createElement('div');
     el.className = 'item-list';
+    el.draggable = true;
+    el.dataset.path = itemPath;
 
     el.innerHTML = `
+        <input type="checkbox" class="item-checkbox" data-path="${escAttr(itemPath)}"
+            onclick="toggleSelect(event,'${escAttr(itemPath)}')">
         <div class="list-icon">${fileIcon(item.name, item.isDir)}</div>
         <div class="list-name" title="${escAttr(item.name)}">${item.name}</div>
         <div class="list-size">${item.isDir ? '—' : formatSize(item.size)}</div>
@@ -213,11 +274,45 @@ function renderListItem(item, itemPath) {
         </div>
     `;
 
+    el.onclick = (e) => {
+        if (e.target.classList.contains('item-checkbox')) return;
+        if (item.isDir) load(itemPath);
+        else openPreview(itemPath, item.name);
+    };
+
+    el.addEventListener('dragstart', e => {
+        e.stopPropagation();
+        const paths = selectedPaths.size > 0 && selectedPaths.has(itemPath)
+            ? [...selectedPaths]
+            : [itemPath];
+        e.dataTransfer.setData('application/localshelf', JSON.stringify(paths));
+        e.dataTransfer.effectAllowed = 'move';
+        el.classList.add('dragging');
+        document.getElementById('dropParent').classList.add('visible');
+    });
+   el.addEventListener('dragend', () => {
+    el.classList.remove('dragging');
+    document.getElementById('dropParent').classList.remove('visible');
+});
+
     if (item.isDir) {
-        el.onclick = () => load(itemPath);
-    } else {
-        el.onclick = () => openPreview(itemPath, item.name);
+        el.addEventListener('dragover', e => {
+            if (!e.dataTransfer.types.includes('application/localshelf')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            el.classList.add('drop-target');
+        });
+        el.addEventListener('dragleave', () => el.classList.remove('drop-target'));
+        el.addEventListener('drop', e => {
+            if (!e.dataTransfer.types.includes('application/localshelf')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            el.classList.remove('drop-target');
+            const paths = JSON.parse(e.dataTransfer.getData('application/localshelf'));
+            moveItems(paths, itemPath);
+        });
     }
+
     return el;
 }
 
@@ -497,16 +592,19 @@ document.getElementById('uploadZone').addEventListener('click', () => {
 // ---- DRAG & DROP ----
 window.addEventListener('dragenter', e => {
     e.preventDefault();
+    if (e.dataTransfer.types.includes('application/localshelf')) return;
     dragCounter++;
     if (dragCounter === 1) dragOverlay.classList.add('visible');
 });
 window.addEventListener('dragleave', () => {
+    if (dragCounter <= 0) return;
     dragCounter--;
     if (dragCounter <= 0) { dragCounter = 0; dragOverlay.classList.remove('visible'); }
 });
 window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => {
     e.preventDefault();
+    if (e.dataTransfer.types.includes('application/localshelf')) return;
     dragCounter = 0;
     dragOverlay.classList.remove('visible');
     [...e.dataTransfer.files].forEach(upload);
@@ -526,3 +624,87 @@ document.addEventListener('keydown', e => {
         if (e.key === 'ArrowRight') previewNav(1);
     }
 });
+
+function handleParentDrop(e) {
+    e.preventDefault();
+    if (!e.dataTransfer.types.includes('application/localshelf')) return;
+    const paths = JSON.parse(e.dataTransfer.getData('application/localshelf'));
+    const parentPath = currentPath.split('/').slice(0, -1).join('/');
+    moveItems(paths, parentPath);
+}
+
+// ---- SELECCIÓN ----
+function toggleSelect(e, itemPath) {
+    e.stopPropagation();
+    if (selectedPaths.has(itemPath)) {
+        selectedPaths.delete(itemPath);
+    } else {
+        selectedPaths.add(itemPath);
+    }
+    updateSelectionUI();
+}
+
+function clearSelection() {
+    selectedPaths.clear();
+    updateSelectionUI();
+}
+
+function updateSelectionUI() {
+    const count = selectedPaths.size;
+
+    // Actualizar checkboxes
+    document.querySelectorAll('.item-checkbox').forEach(cb => {
+        const path = cb.dataset.path;
+        cb.checked = selectedPaths.has(path);
+        cb.closest('.item-grid, .item-list')?.classList.toggle('selected', selectedPaths.has(path));
+    });
+
+    // Barra flotante
+    const bar = document.getElementById('selectionBar');
+    const countEl = document.getElementById('selectionCount');
+    if (count > 0) {
+        bar.classList.add('visible');
+        countEl.textContent = count === 1 ? '1 elemento' : `${count} elementos`;
+    } else {
+        bar.classList.remove('visible');
+    }
+
+    // Zona papelera sidebar
+    document.getElementById('trashZone').classList.toggle('active', count > 0);
+}
+
+// ---- MOVER ----
+async function moveItems(paths, destination) {
+    const res = await fetch('/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths, destination })
+    });
+    if (res.ok || res.status === 207) {
+        const data = await res.json();
+        if (data.errors?.length) showToast(`${data.errors.length} no se pudieron mover`, 'error');
+        else showToast('Movido correctamente', 'success');
+        clearSelection();
+        load(currentPath);
+    } else {
+        showToast('Error al mover', 'error');
+    }
+}
+
+// ---- DELETE MASIVO ----
+async function deleteSelected() {
+    if (!selectedPaths.size) return;
+    const count = selectedPaths.size;
+    if (!confirm(`¿Eliminar ${count} elemento${count > 1 ? 's' : ''}?`)) return;
+
+    let errors = 0;
+    for (const relPath of selectedPaths) {
+        const res = await fetch('/delete?path=' + encodeURIComponent(relPath), { method: 'DELETE' });
+        if (!res.ok) errors++;
+    }
+
+    if (errors) showToast(`${errors} no se pudieron eliminar`, 'error');
+    else showToast('Eliminado', 'success');
+    clearSelection();
+    load(currentPath);
+}
