@@ -41,7 +41,7 @@ Abre cualquiera de esas direcciones en el navegador.
 
 ## Estructura del proyecto
 
-
+```
 LocalShelf/
 ├── public/
 │   ├── index.html      # Estructura HTML
@@ -50,6 +50,7 @@ LocalShelf/
 ├── server.js           # Servidor Express (API REST)
 ├── .env                # Variables de entorno (no se sube al repo)
 └── package.json
+```
 
 ### API del servidor
 
@@ -65,7 +66,7 @@ LocalShelf/
 | POST | `/auth-private` | Autentica la carpeta privada |
 | POST | `/logout-private` | Cierra la sesión privada |
 
-
+```
 ## Feature
 
 - [ ] Renombrar archivos desde la UI
@@ -73,6 +74,7 @@ LocalShelf/
 - [ ] Descarga múltiple como ZIP
 - [ ] Búsqueda de archivos por nombre
 - [ ] Ordenar por nombre, tamaño o fecha
+```
 
 ## Notas de seguridad
 
